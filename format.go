@@ -1,0 +1,21 @@
+package mpv
+
+/*
+#include <mpv/client.h>
+*/
+import "C"
+
+type Format int
+
+const (
+	FORMAT_NONE       Format = C.MPV_FORMAT_NONE
+	FORMAT_STRING     Format = C.MPV_FORMAT_STRING
+	FORMAT_OSD_STRING Format = C.MPV_FORMAT_OSD_STRING
+	FORMAT_FLAG       Format = C.MPV_FORMAT_FLAG
+	FORMAT_INT64      Format = C.MPV_FORMAT_INT64
+	FORMAT_DOUBLE     Format = C.MPV_FORMAT_DOUBLE
+	FORMAT_NODE       Format = C.MPV_FORMAT_NODE
+	FORMAT_NODE_ARRAY Format = C.MPV_FORMAT_NODE_ARRAY
+	FORMAT_NODE_MAP   Format = C.MPV_FORMAT_NODE_MAP
+	FORMAT_BYTE_ARRAY Format = C.MPV_FORMAT_BYTE_ARRAY
+)
