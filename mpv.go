@@ -201,7 +201,7 @@ func (m *Mpv) GetProperty(name string, format Format) (interface{}, error) {
 				return nil, err
 			}
 			defer C.mpv_free_node_contents(&cval)
-			return newNode(&cval), nil
+			return NewNode(&cval), nil
 		}
 	case FORMAT_BYTE_ARRAY:
 		panic("Not implement")
