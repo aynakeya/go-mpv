@@ -1,8 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"github.com/aynakeya/go-mpv"
 	"log"
-	"mpv"
 )
 
 func eventListener(m *mpv.Mpv) chan *mpv.Event {
@@ -37,9 +38,23 @@ func main() {
 	//Set video file
 	log.Println("loadfile", m.Command([]string{"loadfile", ymca}))
 
+	// getting log messages
+	//m.RequestLogMessages(mpv.LOG_LEVEL_INFO)
+
+	//m.ObserveProperty(1, "time-pos", mpv.FORMAT_NODE)
+	m.ObserveProperty(1, "time-pos", mpv.FORMAT_STRING)
+
+	m.GetProperty("time-pos", mpv.FORMAT_STRING)
+
 	for {
 		e := <-c
 		//log.Println(e)
+		if e.EventId == mpv.EVENT_LOG_MESSAGE {
+			fmt.Println(e.LogMessage())
+		}
+		if e.EventId == mpv.EVENT_PROPERTY_CHANGE {
+			fmt.Println(e.Property())
+		}
 		if e.EventId == mpv.EVENT_END_FILE {
 			break
 		}

@@ -14,7 +14,7 @@ type Node struct {
 	Format Format
 }
 
-func NewNode(node *C.mpv_node) Node {
+func newNode(node *C.mpv_node) Node {
 	switch Format(node.format) {
 	case FORMAT_NONE:
 		return Node{nil, FORMAT_NONE}
@@ -73,7 +73,7 @@ func (n Node) CNode() *C.mpv_node {
 func newNodeArray(nl *C.mpv_node_list) []Node {
 	nodes := make([]Node, int(nl.num))
 	for i := 0; i < int(nl.num); i++ {
-		nodes[i] = NewNode(C.get_node_list_element(nl, C.int(i)))
+		nodes[i] = newNode(C.get_node_list_element(nl, C.int(i)))
 	}
 	return nodes
 }
@@ -82,7 +82,7 @@ func newNodeArray(nl *C.mpv_node_list) []Node {
 func newNodeMap(nl *C.mpv_node_list) map[string]Node {
 	nodes := make(map[string]Node)
 	for i := 0; i < int(nl.num); i++ {
-		nodes[C.GoString(C.get_node_list_key(nl, C.int(i)))] = NewNode(C.get_node_list_element(nl, C.int(i)))
+		nodes[C.GoString(C.get_node_list_key(nl, C.int(i)))] = newNode(C.get_node_list_element(nl, C.int(i)))
 	}
 	return nodes
 }

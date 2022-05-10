@@ -4,7 +4,9 @@ package mpv
 #include <mpv/client.h>
 */
 import "C"
-import "unsafe"
+import (
+	"unsafe"
+)
 
 type EventId int
 
@@ -42,8 +44,65 @@ type Event struct {
 	Data          unsafe.Pointer
 }
 
-// Message .
-func (e *Event) Message() string {
-	s := (*C.struct_mpv_event_log_message)(e.Data)
-	return C.GoString((*C.char)(s.text))
+type EventLogMessage struct {
+	Prefix   string
+	Level    string
+	Text     string
+	LogLevel LogLevel
+}
+
+// LogMessage convert data to EventLogMessage
+// MPV_EVENT_LOG_MESSAGE
+func (e *Event) LogMessage() EventLogMessage {
+	if e.EventId != EVENT_LOG_MESSAGE {
+		panic("not a log message event")
+	}
+	s := (*C.mpv_event_log_message)(e.Data)
+	return EventLogMessage{
+		Prefix:   C.GoString(s.prefix),
+		Level:    C.GoString(s.level),
+		Text:     C.GoString(s.text),
+		LogLevel: LogLevel(s.log_level),
+	}
+}
+
+type EventProperty struct {
+	Name   string
+	Format Format
+	Data   interface{}
+}
+
+// Property convert data to EventProperty
+// MPV_EVENT_GET_PROPERTY_REPLY & MPV_EVENT_PROPERTY_CHANGE
+func (e *Event) Property() EventProperty {
+	if e.EventId != EVENT_PROPERTY_CHANGE || e.EventId != EVENT_SET_PROPERTY_REPLY {
+		panic("not a property event")
+	}
+	s := (*C.mpv_event_property)(e.Data)
+	p := EventProperty{
+		Name:   C.GoString(s.name),
+		Format: Format(s.format),
+	}
+	switch p.Format {
+	case FORMAT_NONE:
+		p.Data = nil
+	case FORMAT_STRING, FORMAT_OSD_STRING:
+		p.Data = C.GoString(*(**C.char)(s.data))
+		// seems like i don't need to free lol
+		// fmt.Println(s.data, *(**C.char)(s.data))
+	case FORMAT_INT64:
+		p.Data = int64(*(*C.int64_t)(s.data))
+	case FORMAT_DOUBLE:
+		p.Data = float64(*(*C.double)(s.data))
+	case FORMAT_FLAG:
+		p.Data = int(*(*C.int)(s.data)) == 1
+	case FORMAT_NODE:
+		p.Data = newNode((*C.mpv_node)(s.data))
+		defer C.mpv_free_node_contents((*C.mpv_node)(s.data))
+	case FORMAT_BYTE_ARRAY:
+		panic("Not implement")
+	default:
+		panic("No such Format")
+	}
+	return p
 }
