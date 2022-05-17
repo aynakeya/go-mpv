@@ -44,7 +44,8 @@ func main() {
 	//m.ObserveProperty(1, "time-pos", mpv.FORMAT_NODE)
 	m.ObserveProperty(1, "time-pos", mpv.FORMAT_STRING)
 
-	m.GetProperty("time-pos", mpv.FORMAT_STRING)
+	fmt.Println(123)
+	fmt.Println(m.GetProperty("volume", mpv.FORMAT_NODE))
 
 	for {
 		e := <-c

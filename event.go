@@ -75,7 +75,7 @@ type EventProperty struct {
 // Property convert data to EventProperty
 // MPV_EVENT_GET_PROPERTY_REPLY & MPV_EVENT_PROPERTY_CHANGE
 func (e *Event) Property() EventProperty {
-	if e.EventId != EVENT_PROPERTY_CHANGE || e.EventId != EVENT_SET_PROPERTY_REPLY {
+	if e.EventId != EVENT_PROPERTY_CHANGE && e.EventId != EVENT_SET_PROPERTY_REPLY {
 		panic("not a property event")
 	}
 	s := (*C.mpv_event_property)(e.Data)
