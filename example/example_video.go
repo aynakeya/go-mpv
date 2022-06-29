@@ -23,14 +23,17 @@ var rickroll = "https://fwesh.yonle.repl.co"
 func main() {
 	m := mpv.Create()
 	c := eventListener(m)
-	log.Println("volume", m.SetOption("volume", mpv.FORMAT_INT64, 64))
+	log.Println("volume", m.SetOption("volume", mpv.FORMAT_INT64, 100))
 	log.Println("terminal", m.SetOptionString("terminal", "no"))
 
 	//log.Println("video", m.SetOption("video", mpv.FORMAT_STRING, "no"))
-	log.Println("vo=null", m.SetOptionString("vo", "null"))
+	//log.Println("vo=null", m.SetOption("vo", mpv.FORMAT_STRING, "null"))
+	//log.Println("vo=null", m.SetOptionString("vo", "null"))
+	log.Println("vo=null", m.SetPropertyString("vo", "null"))
 	//log.Println("vid", m.SetOption("vid", mpv.FORMAT_STRING, "no"))
 
 	err := m.Initialize()
+
 	if err != nil {
 		log.Println("Mpv init:", err.Error())
 		return

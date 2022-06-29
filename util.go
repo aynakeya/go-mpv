@@ -4,7 +4,9 @@ package mpv
 #include <mpv_helper.h>
 */
 import "C"
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // getMpvDataPointer malloc data in C memory space
 // don't forget to free the memory after calling this function
@@ -14,6 +16,7 @@ func getMpvDataPointer(format Format, data interface{}) (ptr unsafe.Pointer) {
 		ptr = nil
 	case FORMAT_STRING, FORMAT_OSD_STRING:
 		// add null terminate bytes.
+		panic("using GetPropertyString or GetOptionString instead")
 		ptr = unsafe.Pointer(C.CString(data.(string)))
 	case FORMAT_FLAG:
 		ptr = unsafe.Pointer(C.int_ptr(boolToCInt(data.(bool))))
@@ -33,7 +36,6 @@ func getMpvDataPointer(format Format, data interface{}) (ptr unsafe.Pointer) {
 	default:
 		ptr = nil
 	}
-
 	return
 }
 

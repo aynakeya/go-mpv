@@ -39,6 +39,19 @@ func TestMpv_SetProperty(t *testing.T) {
 	mpv.Destroy()
 }
 
+func TestMpv_SetProperty2(t *testing.T) {
+	mpv := Create()
+	fmt.Println(mpv.Initialize())
+	fmt.Println(mpv.GetProperty("volume", FORMAT_STRING))
+	fmt.Println(mpv.GetProperty("volume", FORMAT_INT64))
+	fmt.Println(mpv.SetProperty("volume", FORMAT_INT64, 50))
+	fmt.Println(mpv.GetProperty("volume", FORMAT_INT64))
+	fmt.Println(mpv.SetPropertyString("volume", "61"))
+	//fmt.Println(mpv.SetProperty("volume", FORMAT_STRING, "61"))
+	fmt.Println(mpv.GetProperty("volume", FORMAT_INT64))
+	mpv.Destroy()
+}
+
 func TestMpv_GetProperty2(t *testing.T) {
 	mpv := Create()
 	fmt.Println(mpv.Initialize())
@@ -53,5 +66,6 @@ func TestMpv_GetProperty2(t *testing.T) {
 		}
 	}
 	fmt.Println(mpv.GetProperty("audio-device-list", FORMAT_STRING))
+	fmt.Println(mpv.GetProperty("audio-device", FORMAT_STRING))
 	mpv.Destroy()
 }
