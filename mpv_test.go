@@ -19,6 +19,7 @@ func TestMpv(t *testing.T) {
 func TestMpv_GetProperty(t *testing.T) {
 	mpv := Create()
 	fmt.Println(mpv.Initialize())
+	fmt.Println(mpv.GetPropertyString("idle-actffive"))
 	fmt.Println(mpv.GetPropertyString("idle-active"))
 	fmt.Println(mpv.GetPropertyOsdString("idle-active"))
 	fmt.Println(mpv.GetProperty("idle-active", FORMAT_STRING))

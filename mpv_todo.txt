@@ -8,7 +8,7 @@ EXPORTS
 -mpv_command
 -mpv_command_async
 -mpv_command_node
--mpv_command_node_async
+-mpv_command_node_asyncz
 -mpv_command_ret
 -mpv_command_string
 

@@ -33,5 +33,3 @@ go get github.com/aynakeya/go-mpv
 ```
 
 # Known bugs
-
-- SetProperty/SetOption doesn't work for FORMAT_STRING. Using Node or SetPropertyString instead.
