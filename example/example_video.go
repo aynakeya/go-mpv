@@ -19,6 +19,7 @@ func eventListener(m *mpv.Mpv) chan *mpv.Event {
 
 var ymca = "https://ia600809.us.archive.org/19/items/VillagePeopleYMCAOFFICIALMusicVideo1978/Village%20People%20-%20YMCA%20OFFICIAL%20Music%20Video%201978.mp4"
 var rickroll = "https://fwesh.yonle.repl.co"
+var localfile = "/home/aynakeya/Videos/igotsmoke.mp4"
 
 func main() {
 	m := mpv.Create()
@@ -29,7 +30,7 @@ func main() {
 	//log.Println("video", m.SetOption("video", mpv.FORMAT_STRING, "no"))
 	//log.Println("vo=null", m.SetOption("vo", mpv.FORMAT_STRING, "null"))
 	//log.Println("vo=null", m.SetOptionString("vo", "null"))
-	log.Println("vo=null", m.SetPropertyString("vo", "null"))
+	//log.Println("vo=null", m.SetPropertyString("vo", "null"))
 	//log.Println("vid", m.SetOption("vid", mpv.FORMAT_STRING, "no"))
 
 	err := m.Initialize()
@@ -39,7 +40,7 @@ func main() {
 		return
 	}
 	//Set video file
-	log.Println("loadfile", m.Command([]string{"loadfile", ymca}))
+	log.Println("loadfile", m.Command([]string{"loadfile", localfile}))
 
 	// getting log messages
 	//m.RequestLogMessages(mpv.LOG_LEVEL_INFO)
@@ -60,6 +61,7 @@ func main() {
 			fmt.Println(e.Property())
 		}
 		if e.EventId == mpv.EVENT_END_FILE {
+			fmt.Println("end file")
 			break
 		}
 

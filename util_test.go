@@ -34,7 +34,7 @@ func TestInt64(t *testing.T) {
 }
 
 func TestGetPtr(t *testing.T) {
-	fmt.Println(getMpvDataPointer(FORMAT_NONE, nil))
-	fmt.Println(getMpvDataPointer(FORMAT_STRING, "asdfasdf"))
-	//fmt.Println(*(*int64)(getMpvDataPointer(FORMAT_INT64, 1234)))
+	fmt.Println(mallocMpvDataPointer(FORMAT_NONE, nil))
+	fmt.Println(mallocMpvDataPointer(FORMAT_STRING, "asdfasdf"))
+	//fmt.Println(*(*int64)(mallocMpvDataPointer(FORMAT_INT64, 1234)))
 }

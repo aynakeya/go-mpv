@@ -83,28 +83,8 @@ void set_node_list_key(mpv_node_list * list,int index, char * key) {
 
 
 
-
 mpv_node * create_node(mpv_format format) {
 	mpv_node * node = malloc(sizeof(*node));
 	node->format = format;
     return node;
-}
-
-// data pointer helper
-int64_t * int64_t_ptr(int64_t val) {
-    int64_t * ptr = malloc(sizeof(*ptr));
-    *ptr = val;
-    return ptr;
-}
-
-int * int_ptr(int val) {
-    int * ptr = malloc(sizeof(*ptr));
-    *ptr = val;
-    return ptr;
-}
-
-double * double_ptr(double val) {
-    double * ptr = malloc(sizeof(*ptr));
-    *ptr = val;
-    return ptr;
 }

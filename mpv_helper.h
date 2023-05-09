@@ -31,9 +31,3 @@ void set_node_list_element(mpv_node_list * list,int index, mpv_node * node);
 char * get_node_list_key(mpv_node_list * list,int index);
 void set_node_list_key(mpv_node_list * list,int index, char * key);
 
-
-// data pointer helper
-int64_t * int64_t_ptr(int64_t val);
-int * int_ptr(int val);
-double * double_ptr(double val);
-

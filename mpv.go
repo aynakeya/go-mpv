@@ -4,8 +4,8 @@ package mpv
 #include <mpv/client.h>
 #include <stdlib.h>
 #include <stdint.h>
-#cgo LDFLAGS: -L./lib -lmpv
-//#cgo LDFLAGS: -lmpv
+//#cgo LDFLAGS: -L./lib -lmpv
+#cgo LDFLAGS: -lmpv
 */
 import "C"
 import (
@@ -92,8 +92,8 @@ mpv_set_option_string
 func (m *Mpv) SetOption(name string, format Format, data interface{}) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	ptr := getMpvDataPointer(format, data)
-	defer C.free(ptr)
+	ptr := mallocMpvDataPointer(format, data)
+	defer freeMpvDataPointer(format, ptr)
 	return newError(C.mpv_set_option(m.handle, cname, C.mpv_format(format), ptr))
 }
 
@@ -114,8 +114,8 @@ mpv_set_property_string
 func (m *Mpv) SetProperty(name string, format Format, data interface{}) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	ptr := getMpvDataPointer(format, data)
-	defer C.free(ptr)
+	ptr := mallocMpvDataPointer(format, data)
+	defer freeMpvDataPointer(format, ptr)
 	return newError(C.mpv_set_property(m.handle, cname, C.mpv_format(format), ptr))
 }
 
@@ -130,8 +130,8 @@ func (m *Mpv) SetPropertyString(name, data string) error {
 func (m *Mpv) SetPropertyAsync(name string, replyUserdata uint64, format Format, data interface{}) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	ptr := getMpvDataPointer(format, data)
-	defer C.free(ptr)
+	ptr := mallocMpvDataPointer(format, data)
+	defer freeMpvDataPointer(format, ptr)
 	return newError(C.mpv_set_property_async(m.handle, C.uint64_t(replyUserdata), cname, C.mpv_format(format), ptr))
 }
 
