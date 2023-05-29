@@ -24,8 +24,10 @@ var localfile = "/home/aynakeya/Videos/igotsmoke.mp4"
 func main() {
 	m := mpv.Create()
 	c := eventListener(m)
+	log.Println("audio-client-name", m.SetOptionString("audio-client-name", "AynaMpvCore"))
 	log.Println("volume", m.SetOption("volume", mpv.FORMAT_INT64, 100))
 	log.Println("terminal", m.SetOptionString("terminal", "no"))
+	log.Println("set ao", m.SetPropertyString("audio-device", "pulse/alsa_output.pci-0000_75_00.6.analog-stereo"))
 
 	//log.Println("video", m.SetOption("video", mpv.FORMAT_STRING, "no"))
 	//log.Println("vo=null", m.SetOption("vo", mpv.FORMAT_STRING, "null"))
@@ -50,6 +52,7 @@ func main() {
 
 	fmt.Println(123)
 	fmt.Println(m.GetProperty("volume", mpv.FORMAT_NODE))
+	fmt.Println(m.GetProperty("ao-volume", mpv.FORMAT_NODE))
 
 	for {
 		e := <-c

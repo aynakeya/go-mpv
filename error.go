@@ -35,7 +35,7 @@ const (
 	MPV_ERROR_GENERIC          Error = C.MPV_ERROR_GENERIC
 )
 
-//const char *mpv_error_string(int error);
+// const char *mpv_error_string(int error);
 func ErrorString(err Error) string {
 	return C.GoString(C.mpv_error_string(C.int(err)))
 }
@@ -48,5 +48,5 @@ func newError(err C.int) error {
 }
 
 func (m Error) Error() string {
-	return fmt.Sprintln(int(m), ErrorString(m))
+	return fmt.Sprintf("%s (%d)", ErrorString(m), int(m))
 }
