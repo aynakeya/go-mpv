@@ -2,6 +2,7 @@ package mpv
 
 /*
 #include <stdlib.h>
+#include <stdint.h>
 
 // data pointer helper
 int64_t * make_int64_t_ptr(int64_t val);
