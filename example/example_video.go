@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/aynakeya/go-mpv"
 	"log"
+
+	"github.com/aynakeya/go-mpv"
 )
 
 func eventListener(m *mpv.Mpv) chan *mpv.Event {
@@ -25,7 +26,7 @@ func main() {
 	m := mpv.Create()
 	c := eventListener(m)
 	log.Println("audio-client-name", m.SetOptionString("audio-client-name", "AynaMpvCore"))
-	log.Println("volume", m.SetOption("volume", mpv.FORMAT_INT64, 100))
+	log.Println("volume", m.SetOption("volume", mpv.FORMAT_INT64, 30))
 	log.Println("terminal", m.SetOptionString("terminal", "no"))
 	log.Println("set ao", m.SetPropertyString("audio-device", "pulse/alsa_output.pci-0000_75_00.6.analog-stereo"))
 

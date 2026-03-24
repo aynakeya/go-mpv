@@ -49,3 +49,7 @@ go get github.com/aynakeya/go-mpv
 Reason:
 - libmpv can only safely free memory it allocated itself.
 - binding-created node trees use custom allocations (including nested map/array keys and byte arrays), and must be released by binding-owned free logic.
+
+## Backend notes
+
+- For `CGO_ENABLED=0` backend details, see [`PUREGO_BACKEND.md`](./PUREGO_BACKEND.md).

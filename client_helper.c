@@ -1,3 +1,6 @@
+//go:build cgo
+// +build cgo
+
 #include <mpv/client.h>
 #include <stdlib.h>
 #include <string.h>

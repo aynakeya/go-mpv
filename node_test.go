@@ -1,3 +1,6 @@
+//go:build cgo
+// +build cgo
+
 package mpv
 
 import (
@@ -36,9 +39,9 @@ func TestNodeRoundTrip(t *testing.T) {
 
 func TestNodeFromProperty(t *testing.T) {
 	m := newInitializedMpv(t)
-	v, err := m.GetProperty("audio-device-list", FORMAT_NODE)
+	v, err := m.GetProperty("track-list", FORMAT_NODE)
 	if err != nil {
-		t.Fatalf("GetProperty(audio-device-list) failed: %v", err)
+		t.Fatalf("GetProperty(track-list) failed: %v", err)
 	}
 	n := v.(Node)
 	if n.Format != FORMAT_NODE_ARRAY {
