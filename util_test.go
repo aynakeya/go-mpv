@@ -1,40 +1,39 @@
 package mpv
 
-import (
-	"fmt"
-	"testing"
-	"unsafe"
-)
+import "testing"
 
-func TestUnsafePointer(t *testing.T) {
-	a := "ABCDEFGH"
-	fmt.Printf("%x %p\n", unsafe.Pointer(&a), unsafe.Pointer(&a))
-	bptr := unsafe.Pointer(&append([]byte(a), 0)[0])
-	//bptr := unsafe.Pointer(&[]byte(a)[0])
-	a0 := []byte("AA")
-	a1 := []byte("BBBB")
-	a2 := []byte("CCCCCC")
-	a3 := []byte("DDDDDD")
-	a4 := []byte("EEEEEE")
-	a5 := []byte("FFFFFF")
-	fmt.Printf("%p %p\n", bptr, unsafe.Pointer(uintptr(bptr)+uintptr(1)))
-	fmt.Printf("%p %p %p %p %p %p\n", a0, a1, a2, a3, a4, a5)
-	for i := 0; i < 64; i++ {
-		fmt.Printf("0x%x\n", *(*byte)(unsafe.Pointer(uintptr(bptr) + uintptr(i))))
+func TestMallocAndFreeMpvDataPointer(t *testing.T) {
+	cases := []struct {
+		name   string
+		format Format
+		data   interface{}
+	}{
+		{name: "none", format: FORMAT_NONE, data: nil},
+		{name: "string", format: FORMAT_STRING, data: "hello"},
+		{name: "flag", format: FORMAT_FLAG, data: true},
+		{name: "int64", format: FORMAT_INT64, data: int64(42)},
+		{name: "double", format: FORMAT_DOUBLE, data: 3.14},
+		{name: "byte_array", format: FORMAT_BYTE_ARRAY, data: ByteArray{1, 2, 3}},
+		{
+			name:   "node",
+			format: FORMAT_NODE,
+			data: Node{
+				Format: FORMAT_NODE_ARRAY,
+				Value: []Node{
+					{Format: FORMAT_STRING, Value: "v"},
+				},
+			},
+		},
 	}
-	fmt.Println(a0, a1, a2, a3, a4, a5)
 
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ptr := mallocMpvDataPointer(tc.format, tc.data)
+			freeMpvDataPointer(tc.format, ptr)
+		})
+	}
 }
 
-func TestInt64(t *testing.T) {
-	var a int = 13
-	var b interface{} = a
-	fmt.Println(b.(int64))
-
-}
-
-func TestGetPtr(t *testing.T) {
-	fmt.Println(mallocMpvDataPointer(FORMAT_NONE, nil))
-	fmt.Println(mallocMpvDataPointer(FORMAT_STRING, "asdfasdf"))
-	//fmt.Println(*(*int64)(mallocMpvDataPointer(FORMAT_INT64, 1234)))
+func TestFreeMpvDataPointerNilIsSafe(t *testing.T) {
+	freeMpvDataPointer(FORMAT_NONE, nil)
 }

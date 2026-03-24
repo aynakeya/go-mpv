@@ -1,10 +1,10 @@
 package mpv
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
-func TestEvent(t *testing.T) {
-	fmt.Println(EventName(EVENT_SEEK))
+func TestEventName(t *testing.T) {
+	name := EventName(EVENT_SEEK)
+	if name != "seek" {
+		t.Fatalf("unexpected event name: %q", name)
+	}
 }

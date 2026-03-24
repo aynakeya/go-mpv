@@ -18,8 +18,12 @@ void set_node_list(mpv_node * node,mpv_node_list * val);
 
 mpv_byte_array * get_node_byte_array(mpv_node * node);
 void set_node_byte_array(mpv_node * node,mpv_byte_array * val);
+const void * get_byte_array_data(mpv_byte_array * ba);
+size_t get_byte_array_size(mpv_byte_array * ba);
+mpv_byte_array * create_byte_array(const void *data, size_t size);
 
 mpv_node * create_node(mpv_format format);
+void free_node(mpv_node *node);
 
 // node list helpers
 
@@ -30,4 +34,3 @@ void set_node_list_element(mpv_node_list * list,int index, mpv_node * node);
 
 char * get_node_list_key(mpv_node_list * list,int index);
 void set_node_list_key(mpv_node_list * list,int index, char * key);
-

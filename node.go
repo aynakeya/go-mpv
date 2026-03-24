@@ -3,7 +3,7 @@ package mpv
 /*
 #include <stdlib.h>
 #include <mpv/client.h>
-#include <mpv_helper.h>
+#include <client_helper.h>
 
 */
 import "C"
@@ -13,6 +13,8 @@ type Node struct {
 	Value  interface{}
 	Format Format
 }
+
+type ByteArray []byte
 
 func newNode(node *C.mpv_node) Node {
 	switch Format(node.format) {
@@ -37,7 +39,15 @@ func newNode(node *C.mpv_node) Node {
 			Value:  newNodeArray(C.get_node_list(node)),
 		}
 	case FORMAT_BYTE_ARRAY:
-		panic("Not implement yet")
+		ba := C.get_node_byte_array(node)
+		size := int(C.get_byte_array_size(ba))
+		if size == 0 {
+			return Node{ByteArray{}, FORMAT_BYTE_ARRAY}
+		}
+		return Node{
+			Value:  ByteArray(C.GoBytes(C.get_byte_array_data(ba), C.int(size))),
+			Format: FORMAT_BYTE_ARRAY,
+		}
 	default:
 		panic("no such format")
 	}
@@ -62,7 +72,12 @@ func (n Node) CNode() *C.mpv_node {
 	case FORMAT_NODE_ARRAY:
 		C.set_node_list(cnode, newCNodeArray(n.Value.([]Node)))
 	case FORMAT_BYTE_ARRAY:
-		panic("Not implement yet")
+		ba := []byte(n.Value.(ByteArray))
+		var ptr unsafe.Pointer
+		if len(ba) > 0 {
+			ptr = unsafe.Pointer(&ba[0])
+		}
+		C.set_node_byte_array(cnode, C.create_byte_array(ptr, C.size_t(len(ba))))
 	default:
 		panic("no such format")
 	}

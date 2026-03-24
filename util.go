@@ -3,6 +3,8 @@ package mpv
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <mpv/client.h>
+#include <client_helper.h>
 
 // data pointer helper
 int64_t * make_int64_t_ptr(int64_t val);
@@ -63,7 +65,12 @@ func mallocMpvDataPointer(format Format, data interface{}) (ptr unsafe.Pointer) 
 		//FORMAT_NODE_ARRAY, FORMAT_NODE_MAP only used under FORMAT_NODE
 		ptr = unsafe.Pointer(data.(Node).CNode())
 	case FORMAT_BYTE_ARRAY:
-		panic("not implement yet")
+		ba := []byte(data.(ByteArray))
+		var bptr unsafe.Pointer
+		if len(ba) > 0 {
+			bptr = unsafe.Pointer(&ba[0])
+		}
+		ptr = unsafe.Pointer(C.create_byte_array(bptr, C.size_t(len(ba))))
 	default:
 		ptr = nil
 	}
@@ -72,11 +79,20 @@ func mallocMpvDataPointer(format Format, data interface{}) (ptr unsafe.Pointer) 
 
 func freeMpvDataPointer(format Format, ptr unsafe.Pointer) {
 	if ptr == nil {
-		panic("free a nil pointer")
+		return
 	}
 	switch format {
 	case FORMAT_STRING, FORMAT_OSD_STRING:
 		C.free(unsafe.Pointer(*(**C.char)(ptr)))
+		C.free(ptr)
+	case FORMAT_NODE:
+		C.free_node((*C.mpv_node)(ptr))
+		C.free(ptr)
+	case FORMAT_BYTE_ARRAY:
+		ba := (*C.mpv_byte_array)(ptr)
+		if ba != nil {
+			C.free(ba.data)
+		}
 		C.free(ptr)
 	default:
 		C.free(ptr)

@@ -51,6 +51,37 @@ void set_node_byte_array(mpv_node * node,mpv_byte_array * val) {
     node->u.ba = val;
 }
 
+const void * get_byte_array_data(mpv_byte_array * ba) {
+    return ba ? ba->data : NULL;
+}
+
+size_t get_byte_array_size(mpv_byte_array * ba) {
+    return ba ? ba->size : 0;
+}
+
+mpv_byte_array * create_byte_array(const void *data, size_t size) {
+    mpv_byte_array *ba = malloc(sizeof(*ba));
+    if (!ba) {
+        return NULL;
+    }
+    ba->size = size;
+    ba->data = NULL;
+    if (size == 0) {
+        return ba;
+    }
+    ba->data = malloc(size);
+    if (!ba->data) {
+        free(ba);
+        return NULL;
+    }
+    if (data) {
+        memcpy(ba->data, data, size);
+    } else {
+        memset(ba->data, 0, size);
+    }
+    return ba;
+}
+
 // node_list helper
 
 mpv_node_list* create_node_list(mpv_format format, int size) {
@@ -87,4 +118,54 @@ mpv_node * create_node(mpv_format format) {
 	mpv_node * node = malloc(sizeof(*node));
 	node->format = format;
     return node;
+}
+
+static void free_node_list(mpv_node_list *list, int is_map);
+
+void free_node(mpv_node *node) {
+    if (!node) {
+        return;
+    }
+    switch (node->format) {
+    case MPV_FORMAT_STRING:
+        free((void *)node->u.string);
+        break;
+    case MPV_FORMAT_NODE_ARRAY:
+        free_node_list((mpv_node_list *)node->u.list, 0);
+        break;
+    case MPV_FORMAT_NODE_MAP:
+        free_node_list((mpv_node_list *)node->u.list, 1);
+        break;
+    case MPV_FORMAT_BYTE_ARRAY: {
+        mpv_byte_array *ba = (mpv_byte_array *)node->u.ba;
+        if (ba) {
+            free(ba->data);
+            free(ba);
+        }
+        break;
+    }
+    case MPV_FORMAT_NONE:
+    case MPV_FORMAT_FLAG:
+    case MPV_FORMAT_INT64:
+    case MPV_FORMAT_DOUBLE:
+    default:
+        break;
+    }
+    node->format = MPV_FORMAT_NONE;
+    node->u.string = NULL;
+}
+
+static void free_node_list(mpv_node_list *list, int is_map) {
+    if (!list) {
+        return;
+    }
+    for (int i = 0; i < list->num; i++) {
+        free_node(&list->values[i]);
+        if (is_map && list->keys) {
+            free(list->keys[i]);
+        }
+    }
+    free(list->values);
+    free(list->keys);
+    free(list);
 }

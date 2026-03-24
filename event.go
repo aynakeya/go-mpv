@@ -33,6 +33,8 @@ const (
 	//EVENT_TICK                  EventId = C.MPV_EVENT_TICK
 )
 
+// EventName returns the symbolic event name.
+// C: const char *mpv_event_name(mpv_event_id event);
 func EventName(id EventId) string {
 	return C.GoString(C.mpv_event_name(C.mpv_event_id(id)))
 }
@@ -42,6 +44,7 @@ type Event struct {
 	Error         error
 	ReplyUserData uint64
 	Data          unsafe.Pointer
+	cEvent        *C.mpv_event
 }
 
 type EventLogMessage struct {
@@ -75,7 +78,7 @@ type EventProperty struct {
 // Property convert data to EventProperty
 // MPV_EVENT_GET_PROPERTY_REPLY & MPV_EVENT_PROPERTY_CHANGE
 func (e *Event) Property() EventProperty {
-	if e.EventId != EVENT_PROPERTY_CHANGE && e.EventId != EVENT_SET_PROPERTY_REPLY {
+	if e.EventId != EVENT_PROPERTY_CHANGE && e.EventId != EVENT_GET_PROPERTY_REPLY {
 		panic("not a property event")
 	}
 	s := (*C.mpv_event_property)(e.Data)
@@ -98,11 +101,61 @@ func (e *Event) Property() EventProperty {
 		p.Data = int(*(*C.int)(s.data)) == 1
 	case FORMAT_NODE:
 		p.Data = newNode((*C.mpv_node)(s.data))
-		defer C.mpv_free_node_contents((*C.mpv_node)(s.data))
 	case FORMAT_BYTE_ARRAY:
-		panic("Not implement")
+		ba := (*C.mpv_byte_array)(s.data)
+		if ba == nil || ba.size == 0 {
+			p.Data = ByteArray{}
+			break
+		}
+		p.Data = ByteArray(C.GoBytes(ba.data, C.int(ba.size)))
 	default:
 		panic("No such Format")
 	}
 	return p
+}
+
+type EventHook struct {
+	Name string
+	ID   uint64
+}
+
+// Hook converts event data to EventHook.
+func (e *Event) Hook() EventHook {
+	if e.EventId != EVENT_HOOK {
+		panic("not a hook event")
+	}
+	s := (*C.mpv_event_hook)(e.Data)
+	return EventHook{
+		Name: C.GoString(s.name),
+		ID:   uint64(s.id),
+	}
+}
+
+type EventCommand struct {
+	Result Node
+}
+
+// Command converts event data to EventCommand.
+func (e *Event) Command() EventCommand {
+	if e.EventId != EVENT_COMMAND_REPLY {
+		panic("not a command reply event")
+	}
+	s := (*C.mpv_event_command)(e.Data)
+	return EventCommand{
+		Result: newNode(&s.result),
+	}
+}
+
+// ToNode converts the current event into a Node map.
+// C: int mpv_event_to_node(mpv_node *dst, mpv_event *src);
+func (e *Event) ToNode() (Node, error) {
+	if e.cEvent == nil {
+		return Node{}, ERROR_INVALID_PARAMETER
+	}
+	var dst C.mpv_node
+	if err := newError(C.mpv_event_to_node(&dst, e.cEvent)); err != nil {
+		return Node{}, err
+	}
+	defer C.mpv_free_node_contents(&dst)
+	return newNode(&dst), nil
 }

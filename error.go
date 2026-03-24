@@ -35,13 +35,14 @@ const (
 	MPV_ERROR_GENERIC          Error = C.MPV_ERROR_GENERIC
 )
 
-// const char *mpv_error_string(int error);
+// ErrorString returns a human-readable string for an mpv error code.
+// C: const char *mpv_error_string(int error);
 func ErrorString(err Error) string {
 	return C.GoString(C.mpv_error_string(C.int(err)))
 }
 
 func newError(err C.int) error {
-	if err == C.MPV_ERROR_SUCCESS {
+	if err >= C.MPV_ERROR_SUCCESS {
 		return nil
 	}
 	return Error(err)

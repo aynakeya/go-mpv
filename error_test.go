@@ -1,13 +1,15 @@
 package mpv
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
-func TestError(t *testing.T) {
-	fmt.Println(ErrorString(ERROR_COMMAND))
-	fmt.Println(newError(1))
-	fmt.Println(newError(-1) == ERROR_EVENT_QUEUE_FULL)
-	fmt.Println(newError(-1123))
+func TestErrorHelpers(t *testing.T) {
+	if ErrorString(ERROR_COMMAND) == "" {
+		t.Fatal("ErrorString(ERROR_COMMAND) is empty")
+	}
+	if newError(0) != nil {
+		t.Fatal("newError(0) must be nil")
+	}
+	if newError(-1) != ERROR_EVENT_QUEUE_FULL {
+		t.Fatalf("newError(-1) mismatch: %v", newError(-1))
+	}
 }
