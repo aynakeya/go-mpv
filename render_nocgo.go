@@ -68,6 +68,30 @@ type OpenGLFBO struct {
 	InternalFormat int32
 }
 
+// OpenGLDRMParams describes the deprecated DRM display parameters.
+type OpenGLDRMParams struct {
+	FD               int32
+	CRTCID           int32
+	ConnectorID      int32
+	AtomicRequestPtr unsafe.Pointer
+	RenderFD         int32
+}
+
+// OpenGLDRMDrawSurfaceSize describes the DRM draw surface size.
+type OpenGLDRMDrawSurfaceSize struct {
+	Width  int32
+	Height int32
+}
+
+// OpenGLDRMParamsV2 describes the current DRM display parameters.
+type OpenGLDRMParamsV2 struct {
+	FD               int32
+	CRTCID           int32
+	ConnectorID      int32
+	AtomicRequestPtr unsafe.Pointer
+	RenderFD         int32
+}
+
 type OpenGLGetProcAddress func(name string) unsafe.Pointer
 
 type OpenGLInitParams struct{}
@@ -83,11 +107,26 @@ func RenderParamAPIType(api string) RenderParam {
 }
 
 func RenderParamOpenGLInitParams(params *OpenGLInitParams) RenderParam {
-	return RenderParam{Type: RENDER_PARAM_OPENGL_INIT_PARAMS}
+	return RenderParam{Type: RENDER_PARAM_OPENGL_INIT_PARAMS, Data: unsafe.Pointer(params)}
 }
 
 func RenderParamOpenGLFBO(fbo *OpenGLFBO) RenderParam {
-	return RenderParam{Type: RENDER_PARAM_OPENGL_FBO}
+	return RenderParam{Type: RENDER_PARAM_OPENGL_FBO, Data: unsafe.Pointer(fbo)}
+}
+
+// RenderParamDRMDisplay creates the deprecated DRM display render parameter.
+func RenderParamDRMDisplay(params *OpenGLDRMParams) RenderParam {
+	return RenderParam{Type: RENDER_PARAM_DRM_DISPLAY, Data: unsafe.Pointer(params)}
+}
+
+// RenderParamDRMDrawSurfaceSize creates the DRM draw surface size parameter.
+func RenderParamDRMDrawSurfaceSize(size *OpenGLDRMDrawSurfaceSize) RenderParam {
+	return RenderParam{Type: RENDER_PARAM_DRM_DRAW_SURFACE_SIZE, Data: unsafe.Pointer(size)}
+}
+
+// RenderParamDRMDisplayV2 creates the current DRM display render parameter.
+func RenderParamDRMDisplayV2(params *OpenGLDRMParamsV2) RenderParam {
+	return RenderParam{Type: RENDER_PARAM_DRM_DISPLAY_V2, Data: unsafe.Pointer(params)}
 }
 
 func RenderParamInt(paramType RenderParamType, value *int32) RenderParam {
