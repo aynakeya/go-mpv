@@ -13,9 +13,41 @@ import (
 )
 
 type mpvNodeRaw struct {
-	U      uintptr
+	U      uint64
 	Format int32
 	_      int32
+}
+
+func (n *mpvNodeRaw) setPointer(p unsafe.Pointer) {
+	n.U = uint64(uintptr(p))
+}
+
+func (n *mpvNodeRaw) pointer() unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&n.U))
+}
+
+func (n *mpvNodeRaw) setInt32(v int32) {
+	n.U = uint64(uint32(v))
+}
+
+func (n *mpvNodeRaw) int32() int32 {
+	return int32(uint32(n.U))
+}
+
+func (n *mpvNodeRaw) setInt64(v int64) {
+	n.U = uint64(v)
+}
+
+func (n *mpvNodeRaw) int64() int64 {
+	return int64(n.U)
+}
+
+func (n *mpvNodeRaw) setFloat64(v float64) {
+	n.U = math.Float64bits(v)
+}
+
+func (n *mpvNodeRaw) float64() float64 {
+	return math.Float64frombits(n.U)
 }
 
 type mpvNodeListRaw struct {
@@ -106,6 +138,18 @@ type puregoBackend struct {
 	eventToNode        func(*mpvNodeRaw, *mpvEventRaw) int32
 	freeNodeContents   func(*mpvNodeRaw)
 	free               func(unsafe.Pointer)
+
+	renderContextCreate func(*unsafe.Pointer, unsafe.Pointer, *mpvRenderParamRaw) int32
+	// mpv_render_context_set_parameter/get_info take mpv_render_param by value.
+	// On the supported purego ABI this is passed as the type word plus data
+	// word, instead of a pointer to the struct used by create/render.
+	renderContextSetParameter      func(unsafe.Pointer, uintptr, unsafe.Pointer) int32
+	renderContextGetInfo           func(unsafe.Pointer, uintptr, unsafe.Pointer) int32
+	renderContextSetUpdateCallback func(unsafe.Pointer, uintptr, unsafe.Pointer)
+	renderContextUpdate            func(unsafe.Pointer) uint64
+	renderContextRender            func(unsafe.Pointer, *mpvRenderParamRaw) int32
+	renderContextReportSwap        func(unsafe.Pointer)
+	renderContextFree              func(unsafe.Pointer)
 }
 
 var backend puregoBackend
@@ -201,6 +245,15 @@ func (b *puregoBackend) bindRequired() {
 	register(&b.eventToNode, "mpv_event_to_node")
 	register(&b.freeNodeContents, "mpv_free_node_contents")
 	register(&b.free, "mpv_free")
+
+	register(&b.renderContextCreate, "mpv_render_context_create")
+	register(&b.renderContextSetParameter, "mpv_render_context_set_parameter")
+	register(&b.renderContextGetInfo, "mpv_render_context_get_info")
+	register(&b.renderContextSetUpdateCallback, "mpv_render_context_set_update_callback")
+	register(&b.renderContextUpdate, "mpv_render_context_update")
+	register(&b.renderContextRender, "mpv_render_context_render")
+	register(&b.renderContextReportSwap, "mpv_render_context_report_swap")
+	register(&b.renderContextFree, "mpv_render_context_free")
 }
 
 func ensureBackend() error {
@@ -278,16 +331,16 @@ func marshalNode(n Node, a *nodeArena) (*mpvNodeRaw, error) {
 	case FORMAT_STRING, FORMAT_OSD_STRING:
 		b := cString(n.Value.(string))
 		a.hold(b)
-		raw.U = uintptr(unsafe.Pointer(&b[0]))
+		raw.setPointer(unsafe.Pointer(&b[0]))
 		return raw, nil
 	case FORMAT_FLAG:
-		raw.U = uintptr(boolToInt32(n.Value.(bool)))
+		raw.setInt32(boolToInt32(n.Value.(bool)))
 		return raw, nil
 	case FORMAT_INT64:
-		raw.U = uintptr(uint64(n.Value.(int64)))
+		raw.setInt64(n.Value.(int64))
 		return raw, nil
 	case FORMAT_DOUBLE:
-		raw.U = uintptr(math.Float64bits(n.Value.(float64)))
+		raw.setFloat64(n.Value.(float64))
 		return raw, nil
 	case FORMAT_BYTE_ARRAY:
 		ba := []byte(n.Value.(ByteArray))
@@ -299,7 +352,7 @@ func marshalNode(n Node, a *nodeArena) (*mpvNodeRaw, error) {
 			vr.Data = unsafe.Pointer(&dup[0])
 		}
 		a.hold(vr)
-		raw.U = uintptr(unsafe.Pointer(vr))
+		raw.setPointer(unsafe.Pointer(vr))
 		return raw, nil
 	case FORMAT_NODE_ARRAY:
 		nodes := n.Value.([]Node)
@@ -317,7 +370,7 @@ func marshalNode(n Node, a *nodeArena) (*mpvNodeRaw, error) {
 			list.Values = &values[0]
 		}
 		a.hold(list)
-		raw.U = uintptr(unsafe.Pointer(list))
+		raw.setPointer(unsafe.Pointer(list))
 		return raw, nil
 	case FORMAT_NODE_MAP:
 		m := n.Value.(map[string]Node)
@@ -343,7 +396,7 @@ func marshalNode(n Node, a *nodeArena) (*mpvNodeRaw, error) {
 			list.Keys = (**byte)(unsafe.Pointer(&keys[0]))
 		}
 		a.hold(list)
-		raw.U = uintptr(unsafe.Pointer(list))
+		raw.setPointer(unsafe.Pointer(list))
 		return raw, nil
 	default:
 		return nil, ERROR_NOT_IMPLEMENTED
@@ -359,46 +412,40 @@ func nodeFromRaw(raw *mpvNodeRaw) Node {
 	case FORMAT_NONE:
 		return Node{Format: FORMAT_NONE}
 	case FORMAT_STRING, FORMAT_OSD_STRING:
-		return Node{Format: format, Value: goString((*byte)(unsafe.Pointer(raw.U)))}
+		return Node{Format: format, Value: goString((*byte)(raw.pointer()))}
 	case FORMAT_FLAG:
-		return Node{Format: FORMAT_FLAG, Value: int32(raw.U) == 1}
+		return Node{Format: FORMAT_FLAG, Value: raw.int32() == 1}
 	case FORMAT_INT64:
-		return Node{Format: FORMAT_INT64, Value: int64(raw.U)}
+		return Node{Format: FORMAT_INT64, Value: raw.int64()}
 	case FORMAT_DOUBLE:
-		return Node{Format: FORMAT_DOUBLE, Value: math.Float64frombits(uint64(raw.U))}
+		return Node{Format: FORMAT_DOUBLE, Value: raw.float64()}
 	case FORMAT_BYTE_ARRAY:
-		ba := (*mpvByteArrayRaw)(unsafe.Pointer(raw.U))
+		ba := (*mpvByteArrayRaw)(raw.pointer())
 		if ba == nil {
 			return Node{Format: FORMAT_BYTE_ARRAY, Value: ByteArray{}}
 		}
 		return Node{Format: FORMAT_BYTE_ARRAY, Value: ByteArray(copyBytes(ba.Data, ba.Size))}
 	case FORMAT_NODE_ARRAY:
-		list := (*mpvNodeListRaw)(unsafe.Pointer(raw.U))
+		list := (*mpvNodeListRaw)(raw.pointer())
 		if list == nil || list.Num <= 0 || list.Values == nil {
 			return Node{Format: FORMAT_NODE_ARRAY, Value: []Node{}}
 		}
 		out := make([]Node, int(list.Num))
-		sz := unsafe.Sizeof(mpvNodeRaw{})
-		base := uintptr(unsafe.Pointer(list.Values))
-		for i := 0; i < int(list.Num); i++ {
-			n := (*mpvNodeRaw)(unsafe.Pointer(base + uintptr(i)*sz))
-			out[i] = nodeFromRaw(n)
+		values := unsafe.Slice(list.Values, int(list.Num))
+		for i := range values {
+			out[i] = nodeFromRaw(&values[i])
 		}
 		return Node{Format: FORMAT_NODE_ARRAY, Value: out}
 	case FORMAT_NODE_MAP:
-		list := (*mpvNodeListRaw)(unsafe.Pointer(raw.U))
+		list := (*mpvNodeListRaw)(raw.pointer())
 		if list == nil || list.Num <= 0 || list.Values == nil {
 			return Node{Format: FORMAT_NODE_MAP, Value: map[string]Node{}}
 		}
 		out := make(map[string]Node, int(list.Num))
-		szNode := unsafe.Sizeof(mpvNodeRaw{})
-		szPtr := unsafe.Sizeof(uintptr(0))
-		baseVals := uintptr(unsafe.Pointer(list.Values))
-		baseKeys := uintptr(unsafe.Pointer(list.Keys))
-		for i := 0; i < int(list.Num); i++ {
-			n := (*mpvNodeRaw)(unsafe.Pointer(baseVals + uintptr(i)*szNode))
-			kptr := *(**byte)(unsafe.Pointer(baseKeys + uintptr(i)*szPtr))
-			out[goString(kptr)] = nodeFromRaw(n)
+		values := unsafe.Slice(list.Values, int(list.Num))
+		keys := unsafe.Slice(list.Keys, int(list.Num))
+		for i := range values {
+			out[goString(keys[i])] = nodeFromRaw(&values[i])
 		}
 		return Node{Format: FORMAT_NODE_MAP, Value: out}
 	default:
