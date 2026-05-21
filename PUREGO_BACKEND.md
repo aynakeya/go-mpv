@@ -32,6 +32,12 @@ Implemented and tested:
   - `Event.Property`, `Event.LogMessage`, `Event.Command`, `Event.Hook`, `Event.ToNode`
 - hooks: `HookAdd`, `HookContinue`
 
+## Render API
+
+- `cgo` backend has render API bindings.
+- `purego` backend currently exposes matching render API stubs that return backend unavailable errors.
+- Real `purego` render support is deferred because it requires additional ABI handling for render callbacks and graphics backend interop.
+
 ## ABI and memory boundaries
 
 The purego backend manually mirrors C structs from `client.h`:

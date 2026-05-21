@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/aynakeya/go-mpv"
 )
@@ -20,7 +22,29 @@ func eventListener(m *mpv.Mpv) chan *mpv.Event {
 
 var ymca = "https://ia600809.us.archive.org/19/items/VillagePeopleYMCAOFFICIALMusicVideo1978/Village%20People%20-%20YMCA%20OFFICIAL%20Music%20Video%201978.mp4"
 var rickroll = "https://fwesh.yonle.repl.co"
-var localfile = "/home/aynakeya/Videos/igotsmoke.mp4"
+
+func videoPath() string {
+	if len(os.Args) > 1 {
+		return os.Args[1]
+	}
+	for _, p := range []string{"data/test.mp4", "../../data/test.mp4"} {
+		if _, err := os.Stat(p); err == nil {
+			abs, err := filepath.Abs(p)
+			if err == nil {
+				return abs
+			}
+			return p
+		}
+	}
+	return ymca
+}
+
+func audioDevice() string {
+	if len(os.Args) > 2 {
+		return os.Args[2]
+	}
+	return os.Getenv("MPV_AUDIO_DEVICE")
+}
 
 func main() {
 	m := mpv.Create()
@@ -28,7 +52,10 @@ func main() {
 	log.Println("audio-client-name", m.SetOptionString("audio-client-name", "AynaMpvCore"))
 	log.Println("volume", m.SetOption("volume", mpv.FORMAT_INT64, 30))
 	log.Println("terminal", m.SetOptionString("terminal", "no"))
-	log.Println("set ao", m.SetPropertyString("audio-device", "pulse/alsa_output.pci-0000_75_00.6.analog-stereo"))
+	if dev := audioDevice(); dev != "" {
+		log.Println("audio-device", m.SetOptionString("audio-device", dev))
+	}
+	m.SetPropertyString("audio-device", "pulse/alsa_output.pci-0000_75_00.6.analog-stereo")
 
 	//log.Println("video", m.SetOption("video", mpv.FORMAT_STRING, "no"))
 	//log.Println("vo=null", m.SetOption("vo", mpv.FORMAT_STRING, "null"))
@@ -43,7 +70,7 @@ func main() {
 		return
 	}
 	//Set video file
-	log.Println("loadfile", m.Command([]string{"loadfile", localfile}))
+	log.Println("loadfile", m.Command([]string{"loadfile", videoPath()}))
 
 	// getting log messages
 	//m.RequestLogMessages(mpv.LOG_LEVEL_INFO)

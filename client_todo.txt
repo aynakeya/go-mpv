@@ -5,21 +5,20 @@ TODO by libmpv header
 - mpv_get_wakeup_pipe (deprecated, optional)
 
 [render.h]
-- render context lifecycle bindings
+- cgo backend: implemented
   - mpv_render_context_create
   - mpv_render_context_free
-- render/update flow
   - mpv_render_context_set_update_callback
   - mpv_render_context_update
   - mpv_render_context_render
   - mpv_render_context_report_swap
-- query/config
   - mpv_render_context_get_info
   - mpv_render_context_set_parameter
+- purego backend: deferred
 
 [stream_cb.h]
 - mpv_stream_cb_add_ro (pending)
 
 Notes
 - Current project scope is client API first.
-- render.h and stream_cb.h are intentionally deferred for now.
+- stream_cb.h is intentionally deferred for now.
