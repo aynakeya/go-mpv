@@ -3,3 +3,5 @@ mpv-2.dll
 /lib/
 /mpv/
 .codex-session
+.agents
+.codex

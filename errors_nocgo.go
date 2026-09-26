@@ -8,6 +8,7 @@ import (
 	"fmt"
 )
 
+// ErrCGODisabled indicates that the nocgo backend could not load libmpv.
 var ErrCGODisabled = errors.New("mpv backend unavailable without cgo (failed to load libmpv)")
 
 type Error int

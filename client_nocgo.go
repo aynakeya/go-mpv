@@ -462,6 +462,9 @@ func ClientApiVersion() uint32 {
 }
 
 // Mpv wraps a libmpv handle in the nocgo backend.
+// A live handle implies that the process-wide backend was loaded successfully.
+// Error-returning methods reject zero-value and destroyed handles with
+// ERROR_INVALID_PARAMETER. Calls must not race with destruction.
 type Mpv struct {
 	handle unsafe.Pointer
 }
@@ -480,7 +483,7 @@ func Create() *Mpv {
 
 // ClientName returns the unique client name.
 func (m *Mpv) ClientName() string {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return ""
 	}
 	return goString(backend.clientName(m.handle))
@@ -488,7 +491,7 @@ func (m *Mpv) ClientName() string {
 
 // ClientId returns the unique client ID.
 func (m *Mpv) ClientId() int64 {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return 0
 	}
 	return backend.clientID(m.handle)
@@ -496,18 +499,17 @@ func (m *Mpv) ClientId() int64 {
 
 // Initialize initializes an uninitialized mpv handle.
 func (m *Mpv) Initialize() error {
-	if m == nil || m.handle == nil {
-		return ErrCGODisabled
-	}
-	if err := ensureBackend(); err != nil {
-		return err
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	return newError(backend.initialize(m.handle))
 }
 
 // Destroy destroys this mpv handle.
+// Repeated calls are safe, but destruction must not run concurrently with other
+// calls on this handle. Free its render context and stop event readers first.
 func (m *Mpv) Destroy() {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return
 	}
 	backend.destroy(m.handle)
@@ -515,8 +517,9 @@ func (m *Mpv) Destroy() {
 }
 
 // TerminateDestroy terminates playback and destroys the handle.
+// It has the same lifetime and concurrency requirements as Destroy.
 func (m *Mpv) TerminateDestroy() {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return
 	}
 	backend.terminateDestroy(m.handle)
@@ -525,7 +528,7 @@ func (m *Mpv) TerminateDestroy() {
 
 // CreateClient creates a new client handle connected to the same core.
 func (m *Mpv) CreateClient(name string) *Mpv {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return nil
 	}
 	cname := cString(name)
@@ -539,7 +542,7 @@ func (m *Mpv) CreateClient(name string) *Mpv {
 
 // CreateWeakClient creates a new weak client handle.
 func (m *Mpv) CreateWeakClient(name string) *Mpv {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return nil
 	}
 	cname := cString(name)
@@ -553,8 +556,8 @@ func (m *Mpv) CreateWeakClient(name string) *Mpv {
 
 // LoadConfigFile loads options from a config file.
 func (m *Mpv) LoadConfigFile(filename string) int {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return int(ERROR_NOT_IMPLEMENTED)
+	if m.handle == nil {
+		return int(ERROR_INVALID_PARAMETER)
 	}
 	cname := cString(filename)
 	ret := backend.loadConfigFile(m.handle, &cname[0])
@@ -564,7 +567,7 @@ func (m *Mpv) LoadConfigFile(filename string) int {
 
 // GetTimeUS returns libmpv monotonic time in microseconds.
 func (m *Mpv) GetTimeUS() int64 {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return 0
 	}
 	return backend.getTimeUS(m.handle)
@@ -572,46 +575,50 @@ func (m *Mpv) GetTimeUS() int64 {
 
 // GetTimeNS returns libmpv monotonic time in nanoseconds.
 func (m *Mpv) GetTimeNS() int64 {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return 0
 	}
 	return backend.getTimeNS(m.handle)
 }
 
-func marshalBasicPropertyValue(format Format, data interface{}) (unsafe.Pointer, [][]byte, error) {
-	var keep [][]byte
+func marshalPropertyValue(format Format, data interface{}) (unsafe.Pointer, interface{}, error) {
 	switch format {
 	case FORMAT_NONE:
-		return nil, keep, nil
+		return nil, nil, nil
 	case FORMAT_STRING, FORMAT_OSD_STRING:
 		cs := cString(data.(string))
 		csp := &cs[0]
-		keep = append(keep, cs)
-		return unsafe.Pointer(&csp), keep, nil
+		return unsafe.Pointer(&csp), cs, nil
 	case FORMAT_FLAG:
 		v := boolToInt32(data.(bool))
-		return unsafe.Pointer(&v), keep, nil
+		return unsafe.Pointer(&v), nil, nil
 	case FORMAT_INT64:
 		v, ok := data.(int64)
 		if !ok {
 			v = int64(data.(int))
 		}
-		return unsafe.Pointer(&v), keep, nil
+		return unsafe.Pointer(&v), nil, nil
 	case FORMAT_DOUBLE:
 		v := data.(float64)
-		return unsafe.Pointer(&v), keep, nil
+		return unsafe.Pointer(&v), nil, nil
+	case FORMAT_NODE:
+		// The raw node union stores pointer bits, so keep the entire tree alive
+		// until libmpv has copied it, including for asynchronous writes.
+		arena := &nodeArena{}
+		node, err := marshalNode(data.(Node), arena)
+		return unsafe.Pointer(node), arena, err
 	default:
-		return nil, keep, ERROR_NOT_IMPLEMENTED
+		return nil, nil, ERROR_NOT_IMPLEMENTED
 	}
 }
 
 // SetOption sets an option value with an explicit format.
 func (m *Mpv) SetOption(name string, format Format, data interface{}) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
-	ptr, keep, err := marshalBasicPropertyValue(format, data)
+	ptr, keep, err := marshalPropertyValue(format, data)
 	if err != nil {
 		return err
 	}
@@ -623,8 +630,8 @@ func (m *Mpv) SetOption(name string, format Format, data interface{}) error {
 
 // SetOptionString sets an option value as string.
 func (m *Mpv) SetOptionString(name, data string) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	cdata := cString(data)
@@ -636,11 +643,11 @@ func (m *Mpv) SetOptionString(name, data string) error {
 
 // SetProperty sets a property value with an explicit format.
 func (m *Mpv) SetProperty(name string, format Format, data interface{}) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
-	ptr, keep, err := marshalBasicPropertyValue(format, data)
+	ptr, keep, err := marshalPropertyValue(format, data)
 	if err != nil {
 		return err
 	}
@@ -652,8 +659,8 @@ func (m *Mpv) SetProperty(name string, format Format, data interface{}) error {
 
 // SetPropertyString sets a property value as string.
 func (m *Mpv) SetPropertyString(name, data string) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	cdata := cString(data)
@@ -665,11 +672,11 @@ func (m *Mpv) SetPropertyString(name, data string) error {
 
 // SetPropertyAsync queues an asynchronous property write.
 func (m *Mpv) SetPropertyAsync(name string, replyUserdata uint64, format Format, data interface{}) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
-	ptr, keep, err := marshalBasicPropertyValue(format, data)
+	ptr, keep, err := marshalPropertyValue(format, data)
 	if err != nil {
 		return err
 	}
@@ -681,8 +688,8 @@ func (m *Mpv) SetPropertyAsync(name string, replyUserdata uint64, format Format,
 
 // GetProperty gets a property value in the requested format.
 func (m *Mpv) GetProperty(name string, format Format) (interface{}, error) {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return nil, ErrCGODisabled
+	if m.handle == nil {
+		return nil, ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	switch format {
@@ -741,7 +748,7 @@ func (m *Mpv) GetProperty(name string, format Format) (interface{}, error) {
 
 // GetPropertyString gets a property value as raw string.
 func (m *Mpv) GetPropertyString(name string) string {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return ""
 	}
 	cname := cString(name)
@@ -756,7 +763,7 @@ func (m *Mpv) GetPropertyString(name string) string {
 
 // GetPropertyOsdString gets a property value as OSD-formatted string.
 func (m *Mpv) GetPropertyOsdString(name string) string {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return ""
 	}
 	cname := cString(name)
@@ -771,8 +778,8 @@ func (m *Mpv) GetPropertyOsdString(name string) string {
 
 // GetPropertyAsync queues an asynchronous property read.
 func (m *Mpv) GetPropertyAsync(name string, replyUserdata uint64, format Format) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	ret := backend.getPropertyAsync(m.handle, replyUserdata, &cname[0], int32(format))
@@ -782,8 +789,8 @@ func (m *Mpv) GetPropertyAsync(name string, replyUserdata uint64, format Format)
 
 // DelProperty deletes the named property.
 func (m *Mpv) DelProperty(name string) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	ret := backend.delProperty(m.handle, &cname[0])
@@ -793,8 +800,8 @@ func (m *Mpv) DelProperty(name string) error {
 
 // ObserveProperty subscribes to property change events.
 func (m *Mpv) ObserveProperty(replyUserdata uint64, name string, format Format) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	ret := backend.observeProperty(m.handle, replyUserdata, &cname[0], int32(format))
@@ -804,24 +811,24 @@ func (m *Mpv) ObserveProperty(replyUserdata uint64, name string, format Format) 
 
 // UnObserveProperty unsubscribes previously observed properties by userdata.
 func (m *Mpv) UnObserveProperty(registeredReplyUserdata uint64) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	return newError(backend.unobserveProperty(m.handle, registeredReplyUserdata))
 }
 
 // RequestEvent enables or disables receiving a specific event.
 func (m *Mpv) RequestEvent(event EventId, enable bool) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	return newError(backend.requestEvent(m.handle, int32(event), boolToInt32(enable)))
 }
 
 // RequestLogMessages configures log message event verbosity.
 func (m *Mpv) RequestLogMessages(minLevel LogLevel) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	clevel := cString(LOG_LEVEL_STRING[minLevel])
 	ret := backend.requestLogMessages(m.handle, &clevel[0])
@@ -831,7 +838,7 @@ func (m *Mpv) RequestLogMessages(minLevel LogLevel) error {
 
 // WaitAsyncRequests blocks until async requests are completed.
 func (m *Mpv) WaitAsyncRequests() {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return
 	}
 	backend.waitAsyncRequests(m.handle)
@@ -839,20 +846,23 @@ func (m *Mpv) WaitAsyncRequests() {
 
 // Wakeup interrupts a blocking WaitEvent call.
 func (m *Mpv) Wakeup() {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return
 	}
 	backend.wakeup(m.handle)
 }
 
 // WaitEvent waits for the next event or timeout.
+// Consume the event payload before the next WaitEvent on this handle or its
+// destruction. Only one goroutine may call WaitEvent on a handle at a time.
+// It returns nil for an invalid handle, not a synthetic timeout event.
 func (m *Mpv) WaitEvent(timeout float64) *Event {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return &Event{EventId: EVENT_NONE}
+	if m.handle == nil {
+		return nil
 	}
 	ev := backend.waitEvent(m.handle, timeout)
 	if ev == nil {
-		return &Event{EventId: EVENT_NONE}
+		return nil
 	}
 	return &Event{
 		EventId:       EventId(ev.EventID),
@@ -865,8 +875,8 @@ func (m *Mpv) WaitEvent(timeout float64) *Event {
 
 // Command runs a command synchronously with string arguments.
 func (m *Mpv) Command(commands []string) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	if len(commands) == 0 {
 		return ERROR_INVALID_PARAMETER
@@ -880,8 +890,8 @@ func (m *Mpv) Command(commands []string) error {
 
 // CommandAsync queues a command and returns immediately.
 func (m *Mpv) CommandAsync(replyUserdata uint64, commands []string) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	if len(commands) == 0 {
 		return ERROR_INVALID_PARAMETER
@@ -895,8 +905,8 @@ func (m *Mpv) CommandAsync(replyUserdata uint64, commands []string) error {
 
 // CommandRet runs a command synchronously and returns structured result data.
 func (m *Mpv) CommandRet(commands []string) (Node, error) {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return Node{}, ErrCGODisabled
+	if m.handle == nil {
+		return Node{}, ERROR_INVALID_PARAMETER
 	}
 	if len(commands) == 0 {
 		return Node{}, ERROR_INVALID_PARAMETER
@@ -915,8 +925,8 @@ func (m *Mpv) CommandRet(commands []string) (Node, error) {
 
 // CommandNode runs a structured command synchronously.
 func (m *Mpv) CommandNode(command Node) (Node, error) {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return Node{}, ErrCGODisabled
+	if m.handle == nil {
+		return Node{}, ERROR_INVALID_PARAMETER
 	}
 	arena := &nodeArena{}
 	arg, err := marshalNode(command, arena)
@@ -935,8 +945,8 @@ func (m *Mpv) CommandNode(command Node) (Node, error) {
 
 // CommandNodeAsync queues a structured command and returns immediately.
 func (m *Mpv) CommandNodeAsync(replyUserdata uint64, command Node) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	arena := &nodeArena{}
 	arg, err := marshalNode(command, arena)
@@ -950,8 +960,8 @@ func (m *Mpv) CommandNodeAsync(replyUserdata uint64, command Node) error {
 
 // CommandString runs a command string using mpv parser semantics.
 func (m *Mpv) CommandString(command string) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	ccmd := cString(command)
 	ret := backend.commandString(m.handle, &ccmd[0])
@@ -961,7 +971,7 @@ func (m *Mpv) CommandString(command string) error {
 
 // AbortAsyncCommand requests cancellation for async commands by userdata.
 func (m *Mpv) AbortAsyncCommand(replyUserdata uint64) {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
+	if m.handle == nil {
 		return
 	}
 	backend.abortAsyncCommand(m.handle, replyUserdata)
@@ -969,8 +979,8 @@ func (m *Mpv) AbortAsyncCommand(replyUserdata uint64) {
 
 // HookAdd registers a hook handler.
 func (m *Mpv) HookAdd(replyUserdata uint64, name string, priority int) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	cname := cString(name)
 	ret := backend.hookAdd(m.handle, replyUserdata, &cname[0], int32(priority))
@@ -980,8 +990,8 @@ func (m *Mpv) HookAdd(replyUserdata uint64, name string, priority int) error {
 
 // HookContinue continues a pending hook event.
 func (m *Mpv) HookContinue(id uint64) error {
-	if m == nil || m.handle == nil || ensureBackend() != nil {
-		return ErrCGODisabled
+	if m.handle == nil {
+		return ERROR_INVALID_PARAMETER
 	}
 	return newError(backend.hookContinue(m.handle, id))
 }

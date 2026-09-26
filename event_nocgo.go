@@ -35,6 +35,10 @@ func EventName(id EventId) string {
 	return goString(backend.eventName(int32(id)))
 }
 
+// Event contains metadata and a payload borrowed from libmpv. Data and the
+// payload accessors are valid only until the next WaitEvent on the same handle
+// or its destruction. Call ToNode or a payload accessor before passing the
+// resulting Go-owned value to another goroutine; copying Event is not enough.
 type Event struct {
 	EventId       EventId
 	Error         error
@@ -140,7 +144,7 @@ func (e *Event) Command() EventCommand {
 
 // ToNode converts event to node map.
 func (e *Event) ToNode() (Node, error) {
-	if e.cEvent == nil || ensureBackend() != nil {
+	if e == nil || e.cEvent == nil {
 		return Node{}, ERROR_INVALID_PARAMETER
 	}
 	var out mpvNodeRaw

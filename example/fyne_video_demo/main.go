@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -19,7 +18,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"github.com/aynakeya/go-mpv"
-	goglfw "github.com/go-gl/glfw/v3.3/glfw"
+	goglfw "github.com/go-gl/glfw/v3.4/glfw"
 )
 
 const defaultFPS = 60
@@ -45,14 +44,21 @@ func main() {
 	w.SetContent(canvas.NewRectangle(color.Black))
 
 	done := make(chan struct{})
+	finished := make(chan struct{})
 	var stopOnce sync.Once
 	stop := func() {
 		stopOnce.Do(func() { close(done) })
+		// The worker waits cancellably for UI work, so joining it here does
+		// not need the event loop and prevents enqueueing after Fyne stops.
+		<-finished
 	}
 	w.SetOnClosed(stop)
 
 	w.Show()
-	go runDemo(w, media, fps, done)
+	go func() {
+		defer close(finished)
+		runDemo(w, media, fps, done, stop)
+	}()
 	a.Run()
 	stop()
 }
@@ -70,7 +76,7 @@ func defaultMedia() string {
 	return "../../data/test.mp4"
 }
 
-func runDemo(w fyne.Window, media string, fps int, done <-chan struct{}) {
+func runDemo(w fyne.Window, media string, fps int, done <-chan struct{}, stop func()) {
 	viewport, err := waitFyneGLFWWindow(w, done)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -79,11 +85,28 @@ func runDemo(w fyne.Window, media string, fps int, done <-chan struct{}) {
 	}
 
 	var player *glMPV
-	fyne.DoAndWait(func() {
+	if !doWhileOpen(done, func() {
 		viewport.MakeContextCurrent()
 		defer goglfw.DetachCurrentContext()
 		player, err = newGLMPV(media)
-	})
+		if err == nil {
+			// Fyne invokes OnClosed before destroying its GLFW window. Free
+			// libmpv here while its GL context and the UI thread still exist.
+			w.SetOnClosed(func() {
+				stop()
+				previous := goglfw.GetCurrentContext()
+				viewport.MakeContextCurrent()
+				player.Close()
+				if previous != nil {
+					previous.MakeContextCurrent()
+				} else {
+					goglfw.DetachCurrentContext()
+				}
+			})
+		}
+	}) {
+		return
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		fyne.Do(func() { w.Close() })
@@ -92,20 +115,17 @@ func runDemo(w fyne.Window, media string, fps int, done <-chan struct{}) {
 
 	ticker := time.NewTicker(time.Second / time.Duration(fps))
 	defer ticker.Stop()
-	defer fyne.DoAndWait(func() {
-		viewport.MakeContextCurrent()
-		player.Close()
-		goglfw.DetachCurrentContext()
-	})
 
 	for {
 		select {
 		case <-done:
 			return
 		case <-ticker.C:
-			player.drainEvents()
-			fyne.DoAndWait(func() {
+			if !doWhileOpen(done, func() {
+				// Event reads, rendering and cleanup all use the UI thread.
 				viewport.MakeContextCurrent()
+				defer goglfw.DetachCurrentContext()
+				player.drainEvents()
 				width, height := viewport.GetFramebufferSize()
 				if width > 0 && height > 0 {
 					if err := player.render(width, height); err != nil {
@@ -114,9 +134,37 @@ func runDemo(w fyne.Window, media string, fps int, done <-chan struct{}) {
 					viewport.SwapBuffers()
 					player.reportSwap()
 				}
-				goglfw.DetachCurrentContext()
-			})
+			}) {
+				return
+			}
 		}
+	}
+}
+
+// doWhileOpen avoids waiting for a callback after Fyne has stopped servicing
+// its queue. Queued callbacks also check cancellation before touching GL.
+// A true result means fn ran to completion, not just that it left the queue.
+func doWhileOpen(done <-chan struct{}, fn func()) bool {
+	select {
+	case <-done:
+		return false
+	default:
+	}
+	completed := make(chan struct{})
+	fyne.Do(func() {
+		select {
+		case <-done:
+			return
+		default:
+			fn()
+			close(completed)
+		}
+	})
+	select {
+	case <-done:
+		return false
+	case <-completed:
+		return true
 	}
 }
 
@@ -127,9 +175,11 @@ func waitFyneGLFWWindow(w fyne.Window, done <-chan struct{}) (*goglfw.Window, er
 	for {
 		var viewport *goglfw.Window
 		var err error
-		fyne.DoAndWait(func() {
+		if !doWhileOpen(done, func() {
 			viewport, err = reflectFyneGLFWWindow(w)
-		})
+		}) {
+			return nil, fmt.Errorf("window closed before Fyne GLFW viewport was available")
+		}
 		if err == nil && viewport != nil {
 			return viewport, nil
 		}
@@ -173,7 +223,7 @@ type glMPV struct {
 	mpv    *mpv.Mpv
 	ctx    *mpv.RenderContext
 	glInit *mpv.OpenGLInitParams
-	closed atomic.Bool
+	closed bool // All player operations run on the UI thread.
 }
 
 func newGLMPV(media string) (*glMPV, error) {
@@ -226,9 +276,10 @@ func newGLMPV(media string) (*glMPV, error) {
 }
 
 func (p *glMPV) Close() {
-	if p == nil || !p.closed.CompareAndSwap(false, true) {
+	if p == nil || p.closed {
 		return
 	}
+	p.closed = true
 	if p.ctx != nil {
 		p.ctx.Free()
 		p.ctx = nil
@@ -244,7 +295,7 @@ func (p *glMPV) Close() {
 }
 
 func (p *glMPV) render(width int, height int) error {
-	if p.closed.Load() {
+	if p.closed {
 		return fmt.Errorf("mpv is closed")
 	}
 	fbo := &mpv.OpenGLFBO{FBO: 0, W: int32(width), H: int32(height)}
@@ -256,7 +307,7 @@ func (p *glMPV) render(width int, height int) error {
 }
 
 func (p *glMPV) reportSwap() {
-	if p != nil && p.ctx != nil && !p.closed.Load() {
+	if p != nil && p.ctx != nil && !p.closed {
 		p.ctx.ReportSwap()
 	}
 }

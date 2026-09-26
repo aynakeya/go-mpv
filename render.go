@@ -267,19 +267,40 @@ func (r *RenderContext) Free() {
 // into C allocations to satisfy the cgo pointer passing rules.
 type cRenderParams struct {
 	ptr       *C.mpv_render_param
-	count     int
 	cleanups  []func()
 	finishers []func()
 }
 
 func newCRenderParams(params []RenderParam) (cRenderParams, error) {
+	for _, param := range params {
+		if param.Type == RENDER_PARAM_INVALID {
+			break
+		}
+		if param.Type != RENDER_PARAM_SKIP_RENDERING {
+			continue
+		}
+		if param.Data != nil && *(*int32)(param.Data) != 0 {
+			// libmpv ignores the surface when skipping a frame. Do not validate
+			// or copy back a temporary software target that it will not write.
+			filtered := make([]RenderParam, 0, len(params))
+			for _, p := range params {
+				switch p.Type {
+				case RENDER_PARAM_SW_SIZE, RENDER_PARAM_SW_FORMAT, RENDER_PARAM_SW_STRIDE, RENDER_PARAM_SW_POINTER:
+					continue
+				}
+				filtered = append(filtered, p)
+			}
+			params = filtered
+		}
+		break
+	}
 	count := len(params) + 1
 	size := C.size_t(count) * C.size_t(unsafe.Sizeof(C.mpv_render_param{}))
 	ptr := (*C.mpv_render_param)(C.calloc(1, size))
 	if ptr == nil {
 		return cRenderParams{}, ERROR_NOMEM
 	}
-	cparams := cRenderParams{ptr: ptr, count: count}
+	cparams := cRenderParams{ptr: ptr}
 	swTargetBytes, err := renderSoftwareTargetBytes(params)
 	if err != nil {
 		cparams.free()
@@ -478,6 +499,9 @@ func newCSoftwarePointerData(ptr unsafe.Pointer, byteLen int) (unsafe.Pointer, f
 	if cbuf == nil {
 		return nil, nil, nil, ERROR_NOMEM
 	}
+	// libmpv need not write row padding. Preserve those bytes rather than
+	// copying uninitialized C memory into the caller's buffer on success.
+	copy(unsafeByteSlice(cbuf, byteLen), unsafeByteSlice(ptr, byteLen))
 	cleanup := func() {
 		C.free(cbuf)
 	}
@@ -526,11 +550,10 @@ func renderSoftwareTargetBytes(params []RenderParam) (int, error) {
 	if !hasHeight || !hasStride || height <= 0 {
 		return 0, ERROR_INVALID_PARAMETER
 	}
-	byteLen := uint64(stride) * uint64(height)
-	if byteLen > uint64(^uint(0)>>1) {
+	if stride == 0 || uint64(stride) > uint64(^uint(0)>>1)/uint64(height) {
 		return 0, ERROR_INVALID_PARAMETER
 	}
-	return int(byteLen), nil
+	return int(stride) * int(height), nil
 }
 
 func unsafeByteSlice(ptr unsafe.Pointer, n int) []byte {

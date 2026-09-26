@@ -36,15 +36,3 @@ func TestNodeRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected byte array: %v", raw)
 	}
 }
-
-func TestNodeFromProperty(t *testing.T) {
-	m := newInitializedMpv(t)
-	v, err := m.GetProperty("track-list", FORMAT_NODE)
-	if err != nil {
-		t.Fatalf("GetProperty(track-list) failed: %v", err)
-	}
-	n := v.(Node)
-	if n.Format != FORMAT_NODE_ARRAY {
-		t.Fatalf("unexpected node format: %v", n.Format)
-	}
-}

@@ -1,6 +1,3 @@
-//go:build cgo
-// +build cgo
-
 package mpv
 
 import (
@@ -12,14 +9,10 @@ import (
 
 func newInitializedMpv(t *testing.T) *Mpv {
 	t.Helper()
-	m := Create()
-	if m == nil {
-		t.Fatal("Create returned nil")
-	}
+	m := newHeadlessClient(t)
 	if err := m.Initialize(); err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	t.Cleanup(m.Destroy)
 	return m
 }
 
@@ -28,6 +21,9 @@ func waitForEvent(t *testing.T, m *Mpv, timeout time.Duration, match func(*Event
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		ev := m.WaitEvent(0.1)
+		if ev == nil {
+			t.Fatal("WaitEvent returned nil for a live handle")
+		}
 		if match(ev) {
 			return ev
 		}
@@ -103,8 +99,8 @@ func TestMpvCommandVariants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CommandRet failed: %v", err)
 	}
-	if ret.Format == FORMAT_NONE {
-		t.Fatal("CommandRet returned FORMAT_NONE")
+	if ret.Format != FORMAT_STRING || ret.Value != "yes" {
+		t.Fatalf("unexpected CommandRet result: %#v", ret)
 	}
 
 	nodeCmd := Node{
@@ -118,8 +114,8 @@ func TestMpvCommandVariants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CommandNode failed: %v", err)
 	}
-	if nodeRet.Format == FORMAT_NONE {
-		t.Fatal("CommandNode returned FORMAT_NONE")
+	if nodeRet.Format != FORMAT_STRING || nodeRet.Value != "yes" {
+		t.Fatalf("unexpected CommandNode result: %#v", nodeRet)
 	}
 }
 
@@ -243,30 +239,20 @@ func testVideoPath(t *testing.T) string {
 	}
 	p := filepath.Join(wd, "data", "test.mp4")
 	if _, err := os.Stat(p); err != nil {
-		t.Skipf("test video not found at %s: %v", p, err)
+		t.Fatalf("test video not found at %s: %v", p, err)
 	}
 	return p
 }
 
 func TestMpvLoadFileAndPlaybackEvents(t *testing.T) {
 	video := testVideoPath(t)
-	m := Create()
-	if m == nil {
-		t.Fatal("Create returned nil")
-	}
-	if err := m.SetOptionString("terminal", "no"); err != nil {
-		t.Fatalf("SetOptionString(terminal) failed: %v", err)
-	}
+	m := newHeadlessClient(t)
 	if err := m.SetOptionString("vo", "null"); err != nil {
 		t.Fatalf("SetOptionString(vo) failed: %v", err)
-	}
-	if err := m.SetOptionString("ao", "null"); err != nil {
-		t.Fatalf("SetOptionString(ao) failed: %v", err)
 	}
 	if err := m.Initialize(); err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	t.Cleanup(m.Destroy)
 
 	if err := m.ObserveProperty(4001, "time-pos", FORMAT_DOUBLE); err != nil {
 		t.Fatalf("ObserveProperty(time-pos) failed: %v", err)
@@ -304,23 +290,13 @@ func TestMpvLoadFileAndPlaybackEvents(t *testing.T) {
 
 func TestMpvHookContinueOnLoad(t *testing.T) {
 	video := testVideoPath(t)
-	m := Create()
-	if m == nil {
-		t.Fatal("Create returned nil")
-	}
-	if err := m.SetOptionString("terminal", "no"); err != nil {
-		t.Fatalf("SetOptionString(terminal) failed: %v", err)
-	}
+	m := newHeadlessClient(t)
 	if err := m.SetOptionString("vo", "null"); err != nil {
 		t.Fatalf("SetOptionString(vo) failed: %v", err)
-	}
-	if err := m.SetOptionString("ao", "null"); err != nil {
-		t.Fatalf("SetOptionString(ao) failed: %v", err)
 	}
 	if err := m.Initialize(); err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	t.Cleanup(m.Destroy)
 
 	const ud = uint64(6001)
 	if err := m.HookAdd(ud, "on_load", 0); err != nil {
@@ -345,4 +321,16 @@ func TestMpvHookContinueOnLoad(t *testing.T) {
 	waitForEvent(t, m, 5*time.Second, func(e *Event) bool {
 		return e.EventId == EVENT_FILE_LOADED
 	})
+}
+
+func TestNodeFromProperty(t *testing.T) {
+	m := newInitializedMpv(t)
+	v, err := m.GetProperty("track-list", FORMAT_NODE)
+	if err != nil {
+		t.Fatalf("GetProperty(track-list) failed: %v", err)
+	}
+	n := v.(Node)
+	if n.Format != FORMAT_NODE_ARRAY {
+		t.Fatalf("unexpected node format: %v", n.Format)
+	}
 }

@@ -55,15 +55,26 @@ func (m *Mpv) Initialize() error {
 }
 
 // Destroy destroys this mpv handle.
+// Repeated calls are safe, but destruction must not run concurrently with other
+// calls on this handle. Free its render context and stop event readers first.
 // C: void mpv_destroy(mpv_handle *ctx);
 func (m *Mpv) Destroy() {
+	if m.handle == nil {
+		return
+	}
 	C.mpv_destroy(m.handle)
+	m.handle = nil
 }
 
 // TerminateDestroy terminates playback and destroys the handle.
+// It has the same lifetime and concurrency requirements as Destroy.
 // C: void mpv_terminate_destroy(mpv_handle *ctx);
 func (m *Mpv) TerminateDestroy() {
+	if m.handle == nil {
+		return
+	}
 	C.mpv_terminate_destroy(m.handle)
+	m.handle = nil
 }
 
 // CreateClient creates a new client handle connected to the same core.
@@ -326,6 +337,8 @@ func (m *Mpv) Wakeup() {
 }
 
 // WaitEvent waits for the next event or timeout.
+// Consume the event payload before the next WaitEvent on this handle or its
+// destruction. Only one goroutine may call WaitEvent on a handle at a time.
 // C: mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout);
 func (m *Mpv) WaitEvent(timeout float64) *Event {
 	var cevent *C.mpv_event

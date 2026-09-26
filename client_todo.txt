@@ -14,7 +14,7 @@ TODO by libmpv header
   - mpv_render_context_report_swap
   - mpv_render_context_get_info
   - mpv_render_context_set_parameter
-- purego backend: deferred
+- purego backend: implemented; Windows loader and render ABI support pending
 
 [stream_cb.h]
 - mpv_stream_cb_add_ro (pending)

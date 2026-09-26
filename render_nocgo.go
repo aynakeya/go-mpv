@@ -80,39 +80,6 @@ type mpvRenderParamRaw struct {
 	Data unsafe.Pointer
 }
 
-type mpvRenderFrameInfoRaw struct {
-	Flags      uint64
-	TargetTime int64
-}
-
-type mpvOpenGLFboRaw struct {
-	FBO            int32
-	W              int32
-	H              int32
-	InternalFormat int32
-}
-
-type mpvOpenGLDRMParamsRaw struct {
-	FD               int32
-	CRTCID           int32
-	ConnectorID      int32
-	AtomicRequestPtr unsafe.Pointer
-	RenderFD         int32
-}
-
-type mpvOpenGLDRMDrawSurfaceSizeRaw struct {
-	Width  int32
-	Height int32
-}
-
-type mpvOpenGLDRMParamsV2Raw struct {
-	FD               int32
-	CRTCID           int32
-	ConnectorID      int32
-	AtomicRequestPtr unsafe.Pointer
-	RenderFD         int32
-}
-
 type mpvOpenGLInitParamsRaw struct {
 	GetProcAddress    uintptr
 	GetProcAddressCtx unsafe.Pointer
@@ -152,18 +119,12 @@ func (p *OpenGLInitParams) Free() {
 }
 
 func (m *Mpv) CreateRenderContext(params []RenderParam) (*RenderContext, error) {
-	if m == nil || m.handle == nil {
-		return nil, ErrCGODisabled
+	if m.handle == nil {
+		return nil, ERROR_INVALID_PARAMETER
 	}
-	if err := ensureBackend(); err != nil {
-		return nil, err
-	}
-	raw, keep, err := newPuregoRenderParams(params)
-	if err != nil {
-		return nil, err
-	}
+	raw, keep := newPuregoRenderParams(params)
 	var ctx unsafe.Pointer
-	err = newError(backend.renderContextCreate(&ctx, m.handle, &raw[0]))
+	err := newError(backend.renderContextCreate(&ctx, m.handle, &raw[0]))
 	runtime.KeepAlive(params)
 	runtime.KeepAlive(keep)
 	if err != nil {
@@ -174,16 +135,10 @@ func (m *Mpv) CreateRenderContext(params []RenderParam) (*RenderContext, error) 
 
 func (r *RenderContext) SetParameter(param RenderParam) error {
 	if r == nil || r.ctx == nil {
-		return ErrCGODisabled
+		return ERROR_INVALID_PARAMETER
 	}
-	if err := ensureBackend(); err != nil {
-		return err
-	}
-	raw, keep, err := newPuregoRenderParams([]RenderParam{param})
-	if err != nil {
-		return err
-	}
-	err = newError(backend.renderContextSetParameter(r.ctx, uintptr(uint32(raw[0].Type)), raw[0].Data))
+	data, keep := puregoRenderParamData(param)
+	err := newError(backend.renderContextSetParameter(r.ctx, uintptr(uint32(param.Type)), data))
 	runtime.KeepAlive(param)
 	runtime.KeepAlive(keep)
 	return err
@@ -191,18 +146,12 @@ func (r *RenderContext) SetParameter(param RenderParam) error {
 
 func (r *RenderContext) GetInfo(param RenderParam) error {
 	if r == nil || r.ctx == nil {
-		return ErrCGODisabled
+		return ERROR_INVALID_PARAMETER
 	}
-	if err := ensureBackend(); err != nil {
-		return err
-	}
-	raw, keep, err := newPuregoRenderParams([]RenderParam{param})
-	if err != nil {
-		return err
-	}
-	err = newError(backend.renderContextGetInfo(r.ctx, uintptr(uint32(raw[0].Type)), raw[0].Data))
-	if err == nil {
-		finishPuregoRenderParams(keep)
+	data, keep := puregoRenderParamData(param)
+	err := newError(backend.renderContextGetInfo(r.ctx, uintptr(uint32(param.Type)), data))
+	if err == nil && keep.finish != nil {
+		keep.finish()
 	}
 	runtime.KeepAlive(param)
 	runtime.KeepAlive(keep)
@@ -210,7 +159,7 @@ func (r *RenderContext) GetInfo(param RenderParam) error {
 }
 
 func (r *RenderContext) SetUpdateCallback(callback func()) {
-	if r == nil || r.ctx == nil || ensureBackend() != nil {
+	if r == nil || r.ctx == nil {
 		return
 	}
 	if callback == nil {
@@ -229,7 +178,7 @@ func (r *RenderContext) SetUpdateCallback(callback func()) {
 }
 
 func (r *RenderContext) Update() uint64 {
-	if r == nil || r.ctx == nil || ensureBackend() != nil {
+	if r == nil || r.ctx == nil {
 		return 0
 	}
 	return backend.renderContextUpdate(r.ctx)
@@ -237,16 +186,10 @@ func (r *RenderContext) Update() uint64 {
 
 func (r *RenderContext) Render(params []RenderParam) error {
 	if r == nil || r.ctx == nil {
-		return ErrCGODisabled
+		return ERROR_INVALID_PARAMETER
 	}
-	if err := ensureBackend(); err != nil {
-		return err
-	}
-	raw, keep, err := newPuregoRenderParams(params)
-	if err != nil {
-		return err
-	}
-	err = newError(backend.renderContextRender(r.ctx, &raw[0]))
+	raw, keep := newPuregoRenderParams(params)
+	err := newError(backend.renderContextRender(r.ctx, &raw[0]))
 	if err == nil {
 		finishPuregoRenderParams(keep)
 	}
@@ -256,14 +199,14 @@ func (r *RenderContext) Render(params []RenderParam) error {
 }
 
 func (r *RenderContext) ReportSwap() {
-	if r == nil || r.ctx == nil || ensureBackend() != nil {
+	if r == nil || r.ctx == nil {
 		return
 	}
 	backend.renderContextReportSwap(r.ctx)
 }
 
 func (r *RenderContext) Free() {
-	if r == nil || r.ctx == nil || ensureBackend() != nil {
+	if r == nil || r.ctx == nil {
 		return
 	}
 	r.SetUpdateCallback(nil)
@@ -279,20 +222,17 @@ type puregoRenderParamKeep struct {
 	finish func()
 }
 
-func newPuregoRenderParams(params []RenderParam) ([]mpvRenderParamRaw, []puregoRenderParamKeep, error) {
+func newPuregoRenderParams(params []RenderParam) ([]mpvRenderParamRaw, []puregoRenderParamKeep) {
 	raw := make([]mpvRenderParamRaw, len(params)+1)
 	keep := make([]puregoRenderParamKeep, 0, len(params))
 	for i, param := range params {
-		data, k, err := puregoRenderParamData(param)
-		if err != nil {
-			return nil, nil, err
-		}
+		data, k := puregoRenderParamData(param)
 		raw[i] = mpvRenderParamRaw{Type: int32(param.Type), Data: data}
 		if k.value != nil || k.finish != nil {
 			keep = append(keep, k)
 		}
 	}
-	return raw, keep, nil
+	return raw, keep
 }
 
 func finishPuregoRenderParams(keep []puregoRenderParamKeep) {
@@ -303,90 +243,28 @@ func finishPuregoRenderParams(keep []puregoRenderParamKeep) {
 	}
 }
 
-func puregoRenderParamData(param RenderParam) (unsafe.Pointer, puregoRenderParamKeep, error) {
+func puregoRenderParamData(param RenderParam) (unsafe.Pointer, puregoRenderParamKeep) {
 	switch param.Type {
 	case RENDER_PARAM_API_TYPE, RENDER_PARAM_SW_FORMAT:
 		if s, ok := param.keep.(renderStringParam); ok {
 			b := cString(string(s))
-			return unsafe.Pointer(&b[0]), puregoRenderParamKeep{value: b}, nil
-		}
-	case RENDER_PARAM_OPENGL_FBO:
-		if fbo, ok := param.keep.(*OpenGLFBO); ok && fbo != nil {
-			raw := &mpvOpenGLFboRaw{
-				FBO:            fbo.FBO,
-				W:              fbo.W,
-				H:              fbo.H,
-				InternalFormat: fbo.InternalFormat,
-			}
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_DRM_DISPLAY:
-		if drm, ok := param.keep.(*OpenGLDRMParams); ok && drm != nil {
-			raw := &mpvOpenGLDRMParamsRaw{
-				FD:               drm.FD,
-				CRTCID:           drm.CRTCID,
-				ConnectorID:      drm.ConnectorID,
-				AtomicRequestPtr: drm.AtomicRequestPtr,
-				RenderFD:         drm.RenderFD,
-			}
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_DRM_DRAW_SURFACE_SIZE:
-		if size, ok := param.keep.(*OpenGLDRMDrawSurfaceSize); ok && size != nil {
-			raw := &mpvOpenGLDRMDrawSurfaceSizeRaw{Width: size.Width, Height: size.Height}
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_DRM_DISPLAY_V2:
-		if drm, ok := param.keep.(*OpenGLDRMParamsV2); ok && drm != nil {
-			raw := &mpvOpenGLDRMParamsV2Raw{
-				FD:               drm.FD,
-				CRTCID:           drm.CRTCID,
-				ConnectorID:      drm.ConnectorID,
-				AtomicRequestPtr: drm.AtomicRequestPtr,
-				RenderFD:         drm.RenderFD,
-			}
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_FLIP_Y, RENDER_PARAM_DEPTH, RENDER_PARAM_AMBIENT_LIGHT,
-		RENDER_PARAM_ADVANCED_CONTROL, RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
-		RENDER_PARAM_SKIP_RENDERING:
-		if v, ok := param.keep.(*int32); ok && v != nil {
-			raw := new(int32)
-			*raw = *v
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_SW_SIZE:
-		if size, ok := param.keep.(*[2]int32); ok && size != nil {
-			raw := &[2]int32{size[0], size[1]}
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_SW_STRIDE:
-		if stride, ok := param.keep.(*uintptr); ok && stride != nil {
-			raw := new(uintptr)
-			*raw = *stride
-			return unsafe.Pointer(raw), puregoRenderParamKeep{value: raw}, nil
-		}
-	case RENDER_PARAM_SW_POINTER:
-		if ptr, ok := param.keep.(renderPointerParam); ok {
-			return ptr.ptr, puregoRenderParamKeep{}, nil
+			return unsafe.Pointer(&b[0]), puregoRenderParamKeep{value: b}
 		}
 	case RENDER_PARAM_NEXT_FRAME_INFO:
 		if info, ok := param.keep.(*RenderFrameInfo); ok && info != nil {
-			raw := &mpvRenderFrameInfoRaw{Flags: info.Flags, TargetTime: info.TargetTime}
-			return unsafe.Pointer(raw), puregoRenderParamKeep{
-				value: raw,
+			// GetInfo must not overwrite the caller's value on failure.
+			raw := *info
+			return unsafe.Pointer(&raw), puregoRenderParamKeep{
+				value: &raw,
 				finish: func() {
-					info.Flags = raw.Flags
-					info.TargetTime = raw.TargetTime
+					*info = raw
 				},
-			}, nil
-		}
-	case RENDER_PARAM_OPENGL_INIT_PARAMS:
-		if params, ok := param.keep.(*OpenGLInitParams); ok && params != nil {
-			return unsafe.Pointer(&params.params), puregoRenderParamKeep{value: params}, nil
+			}
 		}
 	}
-	return param.Data, puregoRenderParamKeep{}, nil
+	// Typed inputs already have the C ABI layout. Callers keep param alive
+	// across the FFI call, so these values need no intermediate allocation.
+	return param.Data, puregoRenderParamKeep{}
 }
 
 var (
